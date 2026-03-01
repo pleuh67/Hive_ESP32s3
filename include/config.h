@@ -38,9 +38,13 @@
 #define DS3231_ADDRESS          0x68
 #define EEPROM_ADDRESS          0x57
 #define OLED_ADDRESS            0x3C
+#ifndef BME280_ADDRESS
 #define BME280_ADDRESS          0x76    // Master uniquement
+#endif
 #define BH1750_ADDRESS          0x23    // Master uniquement
+#ifndef INA219_ADDRESS
 #define INA219_ADDRESS          0x40    // Master uniquement
+#endif
 
 // ===== EEPROM CONFIGURATION =====
 #define CONFIG_VERSION          200     // Version 2.0.0
