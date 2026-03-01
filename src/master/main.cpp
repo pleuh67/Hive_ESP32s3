@@ -13,7 +13,9 @@
 #include "common/display_manager.h"
 #include "common/keypad.h"
 #include "common/power_manager.h"
+#include "common/menus_common.h"
 #include "sensor_manager.h"
+#include "menus_master.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
@@ -105,31 +107,57 @@ void loop()
   {
     interactiveMode = true;
     lastActivityMs  = millis();
-    char buf[32];
-    snprintf(buf, sizeof(buf), "Touche: %s", keyToString(key));
-    LOG_DEBUG(buf);
-    // TODO Phase 1 (menus) : dispatcher selon key
+
+    if (currentMenuDepth == 0)
+    {
+      // Premiere touche : ouvrir le systeme de menus
+      initMenuSystem();
+    }
+    else
+    {
+      // Menus actifs : transmettre la touche a la machine a etats
+      touche = key;
+    }
   }
 
   // --- Alarmes RTC ---
   processRTCAlarms();
 
-  // Tick 1 seconde : rafraichir OLED avec valeurs recentes
+  // Tick 1 seconde : rafraichir OLED (seulement hors menus)
   if (wakeup1Sec)
   {
     wakeup1Sec = false;
     sensorReadBME280();
     sensorReadBH1750();
     sensorReadVBat();
-    showSensorsOnOLED();
+    if (currentMenuDepth == 0)
+    {
+      showSensorsOnOLED();
+    }
   }
 
-  // Alarme payload : cycle de mesure complet
+  // Alarme payload : cycle de mesure complet (seulement hors menus)
   if (wakeupPayload)
   {
     wakeupPayload  = false;
     lastActivityMs = millis();
-    handleWakeupPayload();
+    if (currentMenuDepth == 0)
+    {
+      handleWakeupPayload();
+    }
+  }
+
+  // --- Menus actifs : traitement saisies/navigation ---
+  if (currentMenuDepth > 0)
+  {
+    processActiveInputs();
+    // Sortie menu : revenir a l'affichage capteurs + relancer le timeout
+    if (currentMenuDepth == 0)
+    {
+      showSensorsOnOLED();
+      interactiveMode = false;
+      lastActivityMs  = millis();
+    }
   }
 
   // --- Deep sleep si inactif depuis DISPLAY_TIMEOUT_MS ---

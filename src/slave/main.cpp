@@ -12,6 +12,8 @@
 #include "common/display_manager.h"
 #include "common/keypad.h"
 #include "common/power_manager.h"
+#include "common/menus_common.h"
+#include "menus_slave.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
@@ -43,7 +45,10 @@ static void readVBat(void)
   float adcVal = (float)(sum / 8);
   uint8_t carte = config.materiel.Num_Carte;
   if (carte >= 10) carte = 0;
-  HiveSensor_Data.Bat_Voltage = adcVal * VBatScale_List[carte];
+  float scale = (config.materiel.VBatScale != 0.0f)
+                ? config.materiel.VBatScale
+                : VBatScale_List[carte];
+  HiveSensor_Data.Bat_Voltage = adcVal * scale;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,30 +120,55 @@ void loop()
   {
     interactiveMode = true;
     lastActivityMs  = millis();
-    char buf[32];
-    snprintf(buf, sizeof(buf), "Touche: %s", keyToString(key));
-    LOG_DEBUG(buf);
-    // TODO Phase 1 (menus) : dispatcher selon key (tare, calibration, info)
+    if (currentMenuDepth == 0)
+    {
+      // Premiere touche : ouvrir le systeme de menus
+      initMenuSystem();
+    }
+    else
+    {
+      // Menus actifs : transmettre la touche a la machine a etats
+      touche = key;
+    }
   }
 
   // --- Alarmes RTC ---
   processRTCAlarms();
 
-  // Tick 1 seconde : rafraichir OLED
+  // Tick 1 seconde : rafraichir OLED (seulement hors menus)
   if (wakeup1Sec)
   {
     wakeup1Sec = false;
     hx711GetWeightGrams();
     readVBat();
-    showSlaveOnOLED();
+    if (currentMenuDepth == 0)
+    {
+      showSlaveOnOLED();
+    }
   }
 
-  // Alarme payload : cycle de mesure complet
+  // Alarme payload : cycle de mesure complet (seulement hors menus)
   if (wakeupPayload)
   {
     wakeupPayload  = false;
     lastActivityMs = millis();
-    handleSlaveWakeupPayload();
+    if (currentMenuDepth == 0)
+    {
+      handleSlaveWakeupPayload();
+    }
+  }
+
+  // --- Menus actifs : traitement saisies/navigation ---
+  if (currentMenuDepth > 0)
+  {
+    processActiveInputs();
+    // Sortie menu : revenir a l'affichage capteurs + relancer le timeout
+    if (currentMenuDepth == 0)
+    {
+      showSlaveOnOLED();
+      interactiveMode = false;
+      lastActivityMs  = millis();
+    }
   }
 
   // --- Deep sleep si inactif depuis DISPLAY_TIMEOUT_MS ---
