@@ -1,6 +1,5 @@
-// main.cpp — Master ESP32-S3 Phase 1
-// Cycle : init -> lecture capteurs -> OLED -> deep sleep (alarme RTC)
-// Phase 2 : collecte BLE slaves
+// main.cpp — Master ESP32-S3 Phase 2
+// Cycle : init -> lecture capteurs -> BLE collecte slaves -> OLED -> deep sleep
 // Phase 3 : envoi payload LoRaWAN
 
 #include <Arduino.h>
@@ -16,11 +15,15 @@
 #include "common/menus_common.h"
 #include "sensor_manager.h"
 #include "menus_master.h"
+#include "ble_master.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
 ConfigGenerale_t  config;
 HiveSensor_Data_t HiveSensor_Data;
+
+// Donnees BLE des slaves (remplies par bleMasterCollect, utilisees par payload)
+SlaveReading_t slaveReadings[NUM_SLAVES];
 
 // ===== CONSTANTES PHASE 1 =====
 // Delai avant deep sleep (laisser le temps de lire l'OLED et de brancher un clavier)
@@ -214,20 +217,43 @@ static void showSensorsOnOLED(void)
 // ---------------------------------------------------------------------------
 // @brief Cycle de mesure complet declenche par l'alarme payload RTC
 //
-// Phase 1 : lecture + OLED + Serial
-// Phase 2 : + collecte BLE slaves (slaveReadings[])
-// Phase 3 : + construction payload V2 + envoi LoRaWAN
+// Phase 2 :
+//   1. Lecture capteurs master (BME280, BH1750, INA219, HX711, VBat)
+//   2. Collecte BLE : scan + connexion slaves + lecture poids/VBat/timestamp
+//   3. Affichage OLED + Serial
+// Phase 3 : + construction payload V2 (24 octets) + envoi LoRaWAN
 // ---------------------------------------------------------------------------
 static void handleWakeupPayload(void)
 {
   LOG_INFO("=== Cycle payload ===");
 
+  // Mesures master
   sensorsReadAll();
   hx711GetWeightGrams();
 
+  // Collecte BLE slaves (bloquant : scan 10 s + connexions)
+  bleMasterCollect(slaveReadings, NUM_SLAVES);
+
+  // Affichage resultats
   showSensorsOnOLED();
   sensorsPrintAll();
 
-  // TODO Phase 2 : collecter les 3 slaves BLE
+  for (uint8_t i = 0; i < NUM_SLAVES; i++)
+  {
+    if (slaveReadings[i].valid)
+    {
+      Serial.printf("[BLE] Slave %u : poids=%dg vbat=%u.%uV ts=%lu\n",
+                    (unsigned)i,
+                    (int)slaveReadings[i].weight * 10,
+                    (unsigned)(slaveReadings[i].vbat / 10 + 2),
+                    (unsigned)(slaveReadings[i].vbat % 10),
+                    (unsigned long)slaveReadings[i].timestamp);
+    }
+    else
+    {
+      Serial.printf("[BLE] Slave %u : absent\n", (unsigned)i);
+    }
+  }
+
   // TODO Phase 3 : construire payload V2 (24 octets) et envoyer via LoRaWAN
 }

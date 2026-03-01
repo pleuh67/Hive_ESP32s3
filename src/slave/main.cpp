@@ -1,6 +1,5 @@
-// main.cpp — Slave ESP32-S3 Phase 1
-// Cycle : init -> HX711 + VBat -> OLED -> deep sleep (alarme RTC)
-// Phase 2 : BLE advertising + GATT server (poids, VBat, timestamp)
+// main.cpp — Slave ESP32-S3 Phase 2
+// Cycle : init -> HX711 + VBat -> OLED -> BLE advertising -> deep sleep
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -14,6 +13,7 @@
 #include "common/power_manager.h"
 #include "common/menus_common.h"
 #include "menus_slave.h"
+#include "ble_slave.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
@@ -234,11 +234,26 @@ static void printSlaveSerial(void)
 }
 
 // ---------------------------------------------------------------------------
+// @brief Encode la tension batterie pour BLE (uint8_t)
+// Encodage : (V - 2.0) * 10 — plage 0-25 pour 2.0-4.5 V
+// ---------------------------------------------------------------------------
+static uint8_t encodVBat(float voltage)
+{
+  float encoded = (voltage - 2.0f) * 10.0f;
+  if (encoded < 0.0f)   encoded = 0.0f;
+  if (encoded > 254.0f) encoded = 254.0f;
+  return static_cast<uint8_t>(encoded);
+}
+
+// ---------------------------------------------------------------------------
 // @brief Cycle de mesure complet declenche par l'alarme payload RTC
 //
-// Phase 1 : mesure + OLED + Serial
-// Phase 2 : + BLE advertising 30 s (GATT server : poids, VBat, timestamp)
-//           puis deep sleep
+// Phase 2 :
+//   1. Mesures HX711 + VBat
+//   2. Affichage OLED + Serial
+//   3. BLE advertising (BLE_ADVERTISING_SEC s) — GATT server : poids, VBat, ts
+//   4. Attente connexion master (boucle non bloquante)
+//   5. BLE stop -> deep sleep
 // ---------------------------------------------------------------------------
 static void handleSlaveWakeupPayload(void)
 {
@@ -246,12 +261,31 @@ static void handleSlaveWakeupPayload(void)
 
   hx711GetWeightGrams();
   readVBat();
-
   showSlaveOnOLED();
   printSlaveSerial();
 
-  // TODO Phase 2 : lancer BLE advertising (30 s) + GATT server
-  //   ble_slave_start();
-  //   while (!ble_slave_timeout()) { ... }
-  //   ble_slave_stop();
+  // Encodage des valeurs pour les caracteristiques BLE
+  // Poids : int16_t en unite 0.01 kg (10 g par unite)
+  int16_t weightRaw = static_cast<int16_t>(HiveSensor_Data.HX711Weight[0] / 10.0f);
+  uint8_t vbatEnc   = encodVBat(HiveSensor_Data.Bat_Voltage);
+  uint32_t ts       = static_cast<uint32_t>(rtc.now().unixtime());
+
+  // Lancer le serveur GATT BLE
+  bleSlaveInit(weightRaw, vbatEnc, ts);
+  bleSlaveStart();
+
+  // Attente non bloquante : fin advertising ou connexion master
+  uint32_t t0 = millis();
+  const uint32_t BLE_WAIT_MS = (BLE_ADVERTISING_SEC + 5) * 1000UL;
+  while (!bleSlaveIsComplete() && (millis() - t0 < BLE_WAIT_MS))
+  {
+    delay(50); // NimBLE tourne sur sa propre tache FreeRTOS
+  }
+
+  bleSlaveStop();
+
+  // Reconfigurer l'alarme et dormir jusqu'au prochain cycle
+  DS3231setRTCAlarm2();
+  powerDeepSleep();
+  // Ne retourne jamais
 }
