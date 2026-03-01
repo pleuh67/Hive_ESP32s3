@@ -2,6 +2,12 @@
 // Ruches Connectees : WiFi + BLE + LoRaWAN + Serveur Web + Capteurs
 
 #include <Arduino.h>
+#include "types.h"
+#include "config.h"
+
+// Variables globales partagees entre les modules (extern dans les .cpp communs)
+ConfigGenerale_t config;
+HiveSensor_Data_t HiveSensor_Data;
 
 void setup()
 {

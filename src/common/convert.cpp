@@ -401,7 +401,7 @@ void convertToHexString(const uint8_t *source, char *destination, uint8_t len)
   for (uint8_t i = 0; i < len; i++)
   {
     // Convertir chaque octet en deux caractères hexadécimaux
-    sprintf(&destination[i * 2], "%02X", source[i]);
+    snprintf(&destination[i * 2], 3, "%02X", source[i]);
   }
   // Terminer la chaîne avec un caractère nul
   destination[len * 2] = '\0';

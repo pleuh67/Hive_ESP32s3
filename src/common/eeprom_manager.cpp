@@ -337,9 +337,69 @@ void E24C32DumpConfigToJSON(void)
   Serial.println(F(","));
   Serial.print(F("        \"devEUI\": "));
   E24C32printJSON(config.materiel.DevEUI, 8);
-  Serial.println();
-  Serial.println(F("      }"));
+  Serial.println(F(","));
+  Serial.print(F("        \"poidsTare\": "));
+  Serial.println(config.materiel.poidsTare);
+  Serial.println(F("      },"));
 
+  // Peripheriques presents
+  Serial.println(F("      \"peripheriques\": {"));
+  Serial.print(F("        \"rtc\": "));
+  Serial.print(config.materiel.Rtc ? "true" : "false");
+  Serial.println(F(","));
+  Serial.print(F("        \"kbdAnalogique\": "));
+  Serial.print(config.materiel.KBD_Ana ? "true" : "false");
+  Serial.println(F(","));
+  Serial.print(F("        \"oled\": "));
+  Serial.print(config.materiel.Oled ? "true" : "false");
+  Serial.println(F(","));
+  Serial.print(F("        \"sdhc\": "));
+  Serial.print(config.materiel.SDHC ? "true" : "false");
+  Serial.println(F(","));
+  Serial.print(F("        \"lipo\": "));
+  Serial.print(config.materiel.LiPo ? "true" : "false");
+  Serial.println(F(","));
+  Serial.print(F("        \"solaire\": "));
+  Serial.println(config.materiel.Solaire ? "true" : "false");
+  Serial.println(F("      },"));
+
+  // Facteurs d'echelle analogiques
+  Serial.println(F("      \"analogScale\": {"));
+  Serial.print(F("        \"ldrBrightness\": "));
+  Serial.print(config.materiel.LDRBrightnessScale, 6);
+  Serial.println(F(","));
+  Serial.print(F("        \"vSolaire\": "));
+  Serial.print(config.materiel.VSolScale, 6);
+  Serial.println(F(","));
+  Serial.print(F("        \"vBatterie\": "));
+  Serial.println(config.materiel.VBatScale, 6);
+  Serial.println(F("      },"));
+
+  // Pesons HX711
+  Serial.println(F("      \"pesons\": ["));
+  uint8_t pesonNums[4]  = {config.materiel.Peson_0,            config.materiel.Peson_1,            config.materiel.Peson_2,            config.materiel.Peson_3};
+  uint8_t clkPins[4]   = {config.materiel.HX711Clk_0,         config.materiel.HX711Clk_1,         config.materiel.HX711Clk_2,         config.materiel.HX711Clk_3};
+  uint8_t dtaPins[4]   = {config.materiel.HX711Dta_0,         config.materiel.HX711Dta_1,         config.materiel.HX711Dta_2,         config.materiel.HX711Dta_3};
+  float noloads[4]     = {config.materiel.HX711NoloadValue_0, config.materiel.HX711NoloadValue_1, config.materiel.HX711NoloadValue_2, config.materiel.HX711NoloadValue_3};
+  float tareTemps[4]   = {config.materiel.HX711Tare_Temp_0,   config.materiel.HX711Tare_Temp_1,   config.materiel.HX711Tare_Temp_2,   config.materiel.HX711Tare_Temp_3};
+  float scalings[4]    = {config.materiel.HX711Scaling_0,     config.materiel.HX711Scaling_1,     config.materiel.HX711Scaling_2,     config.materiel.HX711Scaling_3};
+  float corTemps[4]    = {config.materiel.HX711Cor_Temp_0,    config.materiel.HX711Cor_Temp_1,    config.materiel.HX711Cor_Temp_2,    config.materiel.HX711Cor_Temp_3};
+
+  for (uint8_t p = 0; p < 4; p++)
+  {
+    Serial.println(F("        {"));
+    Serial.print(F("          \"numero\": "));       Serial.print(pesonNums[p]);    Serial.println(F(","));
+    Serial.print(F("          \"pinClk\": "));       Serial.print(clkPins[p]);      Serial.println(F(","));
+    Serial.print(F("          \"pinData\": "));      Serial.print(dtaPins[p]);      Serial.println(F(","));
+    Serial.print(F("          \"noloadValue\": "));  Serial.print(noloads[p], 2);   Serial.println(F(","));
+    Serial.print(F("          \"tareTemp\": "));     Serial.print(tareTemps[p], 2); Serial.println(F(","));
+    Serial.print(F("          \"scaling\": "));      Serial.print(scalings[p], 4);  Serial.println(F(","));
+    Serial.print(F("          \"corTemp\": "));      Serial.println(corTemps[p], 4);
+    Serial.print(F("        }"));
+    Serial.println((p < 3) ? "," : "");
+  }
+
+  Serial.println(F("      ]"));
   Serial.println(F("    }"));
   Serial.println(F("  }"));
   Serial.println(F("}"));
