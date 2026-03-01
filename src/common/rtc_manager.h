@@ -43,10 +43,22 @@ void DS3231copyTimeToMicro(bool forcer);
 // Force une synchronisation immediate
 void DS3231forcerSynchronisation(void);
 
-// ===== ISR =====
+// ===== ISR + TRAITEMENT ALARMES =====
 
 // Handler d'interruption RTC (alarme 1 ou 2)
-// IRAM_ATTR obligatoire sur ESP32
+// IRAM_ATTR obligatoire sur ESP32 — ne jamais appeler directement
 void IRAM_ATTR onRTCAlarm(void);
+
+// Traite les alarmes depuis la loop() (jamais depuis ISR)
+void processRTCAlarms(void);
+
+// ===== FLAGS VOLATILS (extern pour loop()) =====
+extern volatile bool wakeupPayload;     // Alarme 2 : heure d'envoyer le payload
+extern volatile bool wakeup1Sec;        // Alarme 1 : tick 1 seconde (mode programmation)
+extern volatile bool displayNextPayload; // Rafraichir l'affichage prochain payload
+extern volatile bool rtcAlarmFlag;      // Flag brut ISR -> loop
+
+// ===== OBJET RTC (extern pour acces direct depuis d'autres modules) =====
+extern RTC_DS3231 rtc;
 
 #endif // RTC_MANAGER_H
