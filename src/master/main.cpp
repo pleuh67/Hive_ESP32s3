@@ -1,26 +1,205 @@
-// main.cpp — Master ESP32-S3
-// Ruches Connectees : WiFi + BLE + LoRaWAN + Serveur Web + Capteurs
+// main.cpp — Master ESP32-S3 Phase 1
+// Cycle : init -> lecture capteurs -> OLED -> deep sleep (alarme RTC)
+// Phase 2 : collecte BLE slaves
+// Phase 3 : envoi payload LoRaWAN
 
 #include <Arduino.h>
+#include <Wire.h>
 #include "types.h"
 #include "config.h"
+#include "common/eeprom_manager.h"
+#include "common/rtc_manager.h"
+#include "common/hx711_manager.h"
+#include "common/display_manager.h"
+#include "common/keypad.h"
+#include "common/power_manager.h"
+#include "sensor_manager.h"
 
-// Variables globales partagees entre les modules (extern dans les .cpp communs)
-ConfigGenerale_t config;
+// ===== VARIABLES GLOBALES =====
+// Partagees avec les modules via extern
+ConfigGenerale_t  config;
 HiveSensor_Data_t HiveSensor_Data;
 
+// ===== CONSTANTES PHASE 1 =====
+// Delai avant deep sleep (laisser le temps de lire l'OLED et de brancher un clavier)
+static const uint32_t DISPLAY_TIMEOUT_MS = 30000; // 30 s
+
+// ===== PROTOTYPES =====
+static void showSensorsOnOLED(void);
+static void handleWakeupPayload(void);
+
+// ---------------------------------------------------------------------------
+// @brief Initialisation complete du master
+// ---------------------------------------------------------------------------
 void setup()
 {
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("=== Ruches Connectees — Master ===");
-  Serial.println("Phase 0 : structure OK, compilation OK");
+  delay(500);
+
+  // 1. Cause du reveil (incremente bootCount en RTC RAM)
+  powerPrintWakeupCause();
+
+  // 2. Bus I2C (RTC + EEPROM + OLED + BME280 + BH1750 + INA219)
+  Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
+
+  // 3. OLED : splash pendant l'init
+  // displayText(col, row, text) — col en caracteres (0..20), row en lignes (0..7)
+  displayInit();
+  displayText(0, 0, "Ruches ESP32-S3");
+  displayText(0, 1, VERSION);
+  displayText(0, 2, "Init...");
+  displayFlush();
+
+  // 4. Configuration persistante (EEPROM AT24C32)
+  E24C32initConfig();
+
+  // 5. RTC DS3231 + alarmes
+  initRTC();
+  DS3231setRTCAlarm1();   // Tick 1 seconde (mode programmation / affichage)
+  DS3231setRTCAlarm2();   // Alarme payload (toutes les WAKEUP_INTERVAL_MIN min)
+  attachInterrupt(digitalPinToInterrupt(PIN_RTC_INT), onRTCAlarm, FALLING);
+
+  // 6. Clavier analogique 5 touches
+  keypadInit();
+
+  // 7. HX711 (cellule de charge)
+  hx711Init();
+
+  // 8. Capteurs I2C master (BME280, BH1750, INA219)
+  bool sensorsOK = sensorsInit();
+  if (!sensorsOK)
+  {
+    LOG_WARNING("Un ou plusieurs capteurs absents");
+  }
+
+  // 9. Premiere lecture complete
+  sensorsReadAll();
+  hx711GetWeightGrams();
+
+  // 10. Affichage initial
+  showSensorsOnOLED();
+  sensorsPrintAll();
+
+  LOG_INFO("Setup termine");
 }
 
+// ---------------------------------------------------------------------------
+// @brief Boucle principale (mode interactif / debug)
+//
+// Cycle normal (deep sleep actif) :
+//   setup() -> lecture -> OLED -> 30 s -> powerDeepSleep()
+//   Reveil EXT0 -> setup() a nouveau
+//
+// Mode interactif (touche clavier) :
+//   Loop continue, OLED rafraichi chaque seconde via alarme RTC
+// ---------------------------------------------------------------------------
 void loop()
 {
-  // TODO Phase 1 : lecture capteurs
-  // TODO Phase 2 : collecte BLE slaves
-  // TODO Phase 3 : envoi LoRaWAN
-  // TODO Phase 4 : serveur web
+  static bool     interactiveMode = false;
+  static uint32_t lastActivityMs  = millis();
+
+  // --- Clavier non bloquant ---
+  processContinuousKeyboard();
+  key_code_t key = readKeyNonBlocking();
+  if (key != KEY_NONE)
+  {
+    interactiveMode = true;
+    lastActivityMs  = millis();
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Touche: %s", keyToString(key));
+    LOG_DEBUG(buf);
+    // TODO Phase 1 (menus) : dispatcher selon key
+  }
+
+  // --- Alarmes RTC ---
+  processRTCAlarms();
+
+  // Tick 1 seconde : rafraichir OLED avec valeurs recentes
+  if (wakeup1Sec)
+  {
+    wakeup1Sec = false;
+    sensorReadBME280();
+    sensorReadBH1750();
+    sensorReadVBat();
+    showSensorsOnOLED();
+  }
+
+  // Alarme payload : cycle de mesure complet
+  if (wakeupPayload)
+  {
+    wakeupPayload  = false;
+    lastActivityMs = millis();
+    handleWakeupPayload();
+  }
+
+  // --- Deep sleep si inactif depuis DISPLAY_TIMEOUT_MS ---
+  if (!interactiveMode && (millis() - lastActivityMs >= DISPLAY_TIMEOUT_MS))
+  {
+    DS3231setRTCAlarm2(); // Reconfigurer l'alarme pour le prochain cycle
+    powerDeepSleep();
+    // powerDeepSleep() ne retourne jamais
+  }
+}
+
+// ---------------------------------------------------------------------------
+// @brief Affiche toutes les valeurs capteurs sur l'OLED (8 lignes x 21 chars)
+//
+// Row 0 : Temperature + Humidite
+// Row 1 : Pression + Luminosite
+// Row 2 : Poids HX711
+// Row 3 : VBat + VSol
+// Row 4 : Courant solaire
+// Row 5 : Numero de boot
+// ---------------------------------------------------------------------------
+static void showSensorsOnOLED(void)
+{
+  char buf[22];
+
+  displayClear();
+
+  snprintf(buf, sizeof(buf), "T:%.1fC HR:%.0f%%",
+           HiveSensor_Data.DHT_Temp, HiveSensor_Data.DHT_Hum);
+  displayText(0, 0, buf);
+
+  snprintf(buf, sizeof(buf), "P:%.0fhPa L:%.0flux",
+           HiveSensor_Data.Pressure, HiveSensor_Data.Brightness);
+  displayText(0, 1, buf);
+
+  snprintf(buf, sizeof(buf), "Poids: %.0fg",
+           HiveSensor_Data.HX711Weight[0]);
+  displayText(0, 2, buf);
+
+  snprintf(buf, sizeof(buf), "Vb:%.2fV Vs:%.2fV",
+           HiveSensor_Data.Bat_Voltage, HiveSensor_Data.Solar_Voltage);
+  displayText(0, 3, buf);
+
+  snprintf(buf, sizeof(buf), "Isol: %.0fmA",
+           HiveSensor_Data.SolarCurrent);
+  displayText(0, 4, buf);
+
+  snprintf(buf, sizeof(buf), "Boot #%lu", (unsigned long)bootCount);
+  displayText(0, 5, buf);
+
+  displayFlush();
+}
+
+// ---------------------------------------------------------------------------
+// @brief Cycle de mesure complet declenche par l'alarme payload RTC
+//
+// Phase 1 : lecture + OLED + Serial
+// Phase 2 : + collecte BLE slaves (slaveReadings[])
+// Phase 3 : + construction payload V2 + envoi LoRaWAN
+// ---------------------------------------------------------------------------
+static void handleWakeupPayload(void)
+{
+  LOG_INFO("=== Cycle payload ===");
+
+  sensorsReadAll();
+  hx711GetWeightGrams();
+
+  showSensorsOnOLED();
+  sensorsPrintAll();
+
+  // TODO Phase 2 : collecter les 3 slaves BLE
+  // TODO Phase 3 : construire payload V2 (24 octets) et envoyer via LoRaWAN
 }
