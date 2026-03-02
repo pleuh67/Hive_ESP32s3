@@ -235,26 +235,24 @@ Slave absent : poids = 0x7FFF, VBat = 0xFF
 | Cartes SODAQ | Retirees |
 | Integration BEEP | A evaluer plus tard |
 
-## Etat d'avancement
+## Etat d'avancement (02/03/2026)
 
-### Phase 0 — Migration de base (EN COURS)
+- **Phase 0** — Migration de base : DONE
+- **Phase 1** — Capteurs + OLED + menus : DONE
+- **Phase 2** — BLE Master/Slaves : DONE
+- **Phase 3** — LoRaWAN OTAA + payload V2 : DONE
+- **Phase 4** — Serveur web WiFi + dashboard : DONE
 
-- [x] Structure repo PlatformIO (src/common, src/master, src/slave)
-- [x] platformio.ini multi-environnement (master + slave compilent)
-- [x] credentials.h + credentials_example.h
-- [x] types.h (porte depuis struct.h + nouvelles structures ESP32)
-- [ ] config.h (constantes, pins — en cours)
-- [ ] Porter code portable (Convert.cpp, Saisies_NB.cpp, 24C32.cpp, DS3231.cpp)
-- [ ] Adapter OLED (Adafruit -> U8g2)
-- [ ] Adapter clavier (ADC 12 bits)
-- [ ] Reecrire power management (esp_sleep)
+Build master : RAM 17.4% / Flash 34.0%
+Build slave  : RAM 10.2% / Flash 17.8%
 
-### Phases suivantes
+### Prochaines etapes
 
-- Phase 1 : Capteurs + OLED + menus (quand Phase 0 terminee)
-- Phase 2 : BLE Master/Slaves (quand Phase 1 terminee)
-- Phase 3 : LoRaWAN (quand module E22-868M22S recu)
-- Phase 4 : Serveur web + robustesse
+- Tests terrain : portee BLE, duty cycle LoRa, deep sleep < 20 uA
+- Calibration des cellules de charge 200 kg
+- Validation payload cote serveur (decodeur Go + Grafana)
+- OTA WiFi, watchdog ESP32
+- Integration BEEP (a evaluer)
 
 ## Documentation
 
@@ -266,21 +264,22 @@ Slave absent : poids = 0x7FFF, VBat = 0xFF
 | `docs/ANALYSE_BEEP.md` | Etude plateforme BEEP |
 | `docs/plan/ANALYSE_REPO.md` | Audit du code source ATSAMD |
 
-## Code ATSAMD de reference (portage)
+## Portage ATSAMD termine (02/03/2026)
 
-Le code source ATSAMD est dans le meme repo (fichiers a la racine) :
+Les 26 fichiers ATSAMD originaux ont ete supprimes apres portage complet.
+L'historique git conserve la trace (commit ee37fd6).
 
-| Fichier ATSAMD | Destination ESP32 | Portabilite |
-|----------------|-------------------|-------------|
-| struct.h | include/types.h | 100% — FAIT |
-| Convert.cpp | src/common/convert.cpp | 100% |
-| Saisies_NB.cpp | src/common/saisies_nb.cpp | 100% |
-| 24C32.cpp | src/common/eeprom_manager.cpp | 95% |
-| DS3231.cpp | src/common/rtc_manager.cpp | 90% |
-| OLED.cpp | src/common/display_manager.cpp | Reecriture API |
-| KEYPAD.cpp | src/common/keypad.cpp | Recalibrer ADC |
-| Mesures.cpp | src/common/hx711_manager.cpp | Factoriser |
-| Menus.cpp | src/common/menus_common.cpp | 95% |
-| RN2483A.cpp | src/master/lora_manager.cpp | Reecriture complete |
-| Power.cpp | src/common/power_manager.cpp | Reecriture complete |
-| ISR.cpp | integre dans rtc_manager | Simplifier |
+| Fichier ATSAMD (supprime) | Porte dans |
+|---------------------------|-----------|
+| struct.h | include/types.h |
+| Convert.cpp | src/common/convert.cpp |
+| Saisies_NB.cpp | src/common/saisies_nb.cpp |
+| 24C32.cpp | src/common/eeprom_manager.cpp |
+| DS3231.cpp + ISR.cpp | src/common/rtc_manager.cpp |
+| OLED.cpp | src/common/display_manager.cpp |
+| KEYPAD.cpp | src/common/keypad.cpp |
+| Mesures.cpp | src/common/hx711_manager.cpp |
+| Menus.cpp + MenusFonc.cpp + Handle.cpp | src/common/menus_common.cpp |
+| RN2483A.cpp | src/master/lora_manager.cpp |
+| Power.cpp | src/common/power_manager.cpp |
+| setup.cpp | src/master/main.cpp + src/slave/main.cpp |

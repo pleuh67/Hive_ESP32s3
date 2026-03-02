@@ -1,9 +1,9 @@
 # Plan de travail — Ruches Connectees ESP32-S3
 
-## MISE A JOUR 01/03/2026 — Migration ATSAMD21 -> ESP32-S3 Master/Slaves
+## MISE A JOUR 02/03/2026 — Phases 0 a 4 terminees
 
 Toutes les decisions architecturales ont ete tranchees avec Philippe le 01/03/2026.
-Voir `docs/plan/IMPACT_MIGRATION_ESP32.md` pour le detail des 29 decisions.
+Voir `docs/plan/IMPACT_MIGRATION_ESP32.md` pour le detail des decisions.
 
 ## Architecture cible
 
@@ -24,169 +24,113 @@ OLED + clavier + menus             Poids + VBat + timestamp
    Prometheus -> Grafana
 ```
 
-## Vue d'ensemble des phases
+## Etat d'avancement (02/03/2026)
 
 ```
-Phase 0 (EN COURS)             Phase 1                    Phase 2
-MIGRATION DE BASE              CAPTEURS + OLED            BLE MASTER/SLAVES
+Phase 0 [DONE]        Phase 1 [DONE]        Phase 2 [DONE]
+MIGRATION DE BASE      CAPTEURS + OLED       BLE MASTER/SLAVES
 
-+- Structure PlatformIO [OK]   +- HX711 manager           +- Slave GATT server
-+- types.h porte [OK]          +- DS3231 + EEPROM         +- Master GATT client
-+- config.h (en cours)         +- OLED SSD1309 (U8g2)     +- Pairing passkey
-+- Porter code portable        +- Clavier analogique      +- Cycle 3 slaves
-+- Adapter drivers             +- BME280/BH1750/INA219    +- Deep sleep slaves
-+- Power management            +- Menus calibration       +- Affichage OLED
+[x] Structure PIO      [x] HX711 manager     [x] Slave GATT server
+[x] types.h porte      [x] DS3231 + EEPROM   [x] Master GATT client
+[x] config.h           [x] OLED (U8g2)       [x] Pairing passkey
+[x] convert.cpp        [x] Clavier ADC       [x] Cycle 3 slaves
+[x] saisies_nb.cpp     [x] BME280/BH1750     [x] Deep sleep slaves
+[x] eeprom_manager     [x] INA219            [x] Donnees SlaveReading_t
+[x] rtc_manager        [x] Menus calibration
+[x] power_manager
 
-Phase 3 (quand module recu)    Phase 4
-LORAWAN                        WEB + ROBUSTESSE
+Phase 3 [DONE]        Phase 4 [DONE]
+LORAWAN               WEB + SERVEUR
 
-+- RadioLib + SX1262           +- ESPAsyncWebServer
-+- OTAA Orange Live Objects    +- API REST + WebSocket
-+- Payload V2 (24 octets)     +- OTA WiFi
-+- Persistance deep sleep      +- Watchdog
-+- ADR + forcer SF             +- Logs LittleFS
+[x] RadioLib SX1262    [x] ESPAsyncWebServer
+[x] OTAA Orange LO     [x] WiFi STA + LittleFS
+[x] Payload V2 24B     [x] API REST /api/data
+[x] Session RTC RAM    [x] API REST /api/status
+[x] ADR + forcer SF    [x] POST /api/lora/join
+                       [x] Dashboard HTML
 ```
 
-**Backend : Orange Live Objects** (pas de TTN)
-**Module LoRa : E22-868M22S (SPI)** — a commander (le E22-900T30D UART est incompatible RadioLib)
+**Build master** : RAM 17.4% / Flash 34.0%
+**Build slave**  : RAM 10.2% / Flash 17.8%
 
-## Phase 0 — Migration de base
-
-**Objectif** : repo PlatformIO fonctionnel, code portable porte, compilation OK.
-
-### Fait
+## Phase 0 — Migration de base [DONE]
 
 - [x] Structure repo (`src/common/`, `src/master/`, `src/slave/`, `include/`)
 - [x] `platformio.ini` multi-env (master + slave compilent)
 - [x] `.gitignore` (credentials, .pio, binaires)
 - [x] `credentials.h` + `credentials_example.h`
 - [x] `include/types.h` (porte depuis struct.h + SlaveReading_t)
-- [x] `src/master/main.cpp` et `src/slave/main.cpp` (minimaux)
+- [x] `include/config.h` — constantes et pins ESP32-S3
+- [x] `src/common/convert.cpp/h`
+- [x] `src/common/saisies_nb.cpp/h`
+- [x] `src/common/eeprom_manager.cpp/h`
+- [x] `src/common/rtc_manager.cpp/h`
+- [x] Compilation des deux envs sans erreur
 
-### A faire
+## Phase 1 — Capteurs + OLED + menus [DONE]
 
-- [ ] `include/config.h` — constantes et pins adaptes ESP32-S3
-- [ ] `src/common/convert.cpp/h` — copie directe de Convert.cpp
-- [ ] `src/common/saisies_nb.cpp/h` — copie + remap Serial
-- [ ] `src/common/eeprom_manager.cpp/h` — copie + remap Serial
-- [ ] `src/common/rtc_manager.cpp/h` — adapter ISR (IRAM_ATTR, flag only)
-- [ ] Ajouter les lib_deps incrementalement dans platformio.ini
-- [ ] Valider compilation des deux envs avec le code porte
+- [x] `src/common/hx711_manager.cpp/h`
+- [x] `src/common/display_manager.cpp/h` — U8g2 + SSD1309
+- [x] `src/common/keypad.cpp/h` — clavier ADC 12 bits
+- [x] `src/common/power_manager.cpp/h` — esp_sleep
+- [x] `src/common/menus_common.cpp/h`
+- [x] `src/master/sensor_manager.cpp/h` — BME280, BH1750, INA219
+- [x] `src/master/menus_master.cpp/h`
+- [x] `src/slave/menus_slave.cpp/h`
 
-### Validation
+## Phase 2 — BLE Master/Slaves [DONE]
 
-```bash
-pio run -e master   # compile sans erreur
-pio run -e slave    # compile sans erreur
-```
+- [x] `src/slave/ble_slave.cpp/h` — GATT server, 3 caracteristiques
+- [x] `src/master/ble_master.cpp/h` — scan, connect, read, disconnect
+- [x] Pairing passkey statique (NimBLE 2.x)
+- [x] Encodage : weight = poids_g/10 (int16_t), vbat = (V-2.0)*10 (uint8_t)
+- [x] SlaveReading_t slaveReadings[3] rempli par bleMasterCollect
 
-## Phase 1 — Capteurs + OLED + menus
+## Phase 3 — LoRaWAN [DONE]
 
-**Objectif** : lecture de tous les capteurs, affichage OLED, navigation menus.
+- [x] `src/master/lora_manager.cpp/h` — RadioLib 7.x + SX1262 via SPI
+- [x] OTAA join vers Orange Live Objects
+- [x] Construction payload V2 (24 octets)
+- [x] Persistance session LoRaWAN en RTC RAM (getBufferSession/setBufferSession)
+- [x] ADR active, option forcer SF via menu
+- [x] `radio.setDio2AsRfSwitch(true)` pour E22-868M22S
 
-### Master
+## Phase 4 — Serveur web [DONE]
 
-- [ ] `src/common/hx711_manager.cpp/h` — 1 HX711, coefficients Jauge[]
-- [ ] `src/common/rtc_manager.cpp/h` — alarmes DS3231 + reveil deep sleep
-- [ ] `src/common/eeprom_manager.cpp/h` — config persistante AT24C32
-- [ ] `src/common/display_manager.cpp/h` — U8g2 + SSD1309 (reecriture API)
-- [ ] `src/common/keypad.cpp/h` — clavier ADC 12 bits
-- [ ] `src/common/power_manager.cpp/h` — esp_sleep (reecriture complete)
-- [ ] `src/master/sensor_manager.cpp/h` — BME280, BH1750, INA219
-- [ ] `src/common/menus_common.cpp/h` — calibration, info
-- [ ] `src/master/menus_master.cpp/h` — menus specifiques master
+- [x] `src/master/web_server.cpp/h` — ESPAsyncWebServer + WiFi STA
+- [x] LittleFS pour fichiers statiques (`data-master/`)
+- [x] API REST : `/api/data`, `/api/status`, `/api/lora/join`
+- [x] Dashboard HTML (`data-master/index.html`)
+- [x] CORS : `Access-Control-Allow-Origin: *`
+- [x] Deep sleep desactive si WiFi connecte
+- [x] `webServerProcess()` pour actions differees (join LoRa)
 
-### Slave
+## Phases suivantes (a definir)
 
-- [ ] HX711 via hx711_manager (1 cellule 200 kg)
-- [ ] VBat via ADC
-- [ ] Affichage OLED simple (poids, VBat, horodatage)
-- [ ] Menus calibration basiques
-
-### Validation
-
-- [ ] Master affiche T/HR/P/Lux/Poids/VBat/VSol sur OLED
-- [ ] Slave affiche Poids/VBat sur OLED
-- [ ] Clavier navigue dans les menus
-- [ ] Deep sleep < 20 uA
-
-## Phase 2 — BLE Master/Slaves
-
-**Objectif** : communication BLE entre master et 3 slaves.
-
-- [ ] `src/slave/ble_slave.cpp/h` — GATT server, 3 caracteristiques (poids, VBat, timestamp)
-- [ ] `src/master/ble_master.cpp/h` — scan, connect, read, disconnect
-- [ ] Pairing passkey statique
-- [ ] Cycle : slave mesure -> BLE advertising 30s -> deep sleep 15 min
-- [ ] Master agrege dans `SlaveReading_t slaveReadings[3]`
-
-### Validation
-
-- [ ] Master trouve et lit les 3 slaves
-- [ ] Pairing persiste apres deep sleep
-- [ ] Donnees slaves affichees sur OLED master
-
-## Phase 3 — LoRaWAN (quand module E22-868M22S recu)
-
-**Objectif** : envoi des donnees agregees vers Orange Live Objects.
-
-- [ ] `src/master/lora_manager.cpp/h` — RadioLib + SX1262 via SPI
-- [ ] OTAA join vers Orange Live Objects
-- [ ] Construction payload V2 (24 octets : master + 3 slaves)
-- [ ] Persistance session LoRaWAN apres deep sleep (NVS + RTC RAM)
-- [ ] ADR active, option forcer SF via menu
-
-### Validation
-
-- [ ] Join OTAA reussi
-- [ ] Payload decode correctement cote serveur
-- [ ] Session survit au deep sleep
-- [ ] ADR fonctionne
-
-## Phase 4 — Serveur web + robustesse
-
-**Objectif** : interface web, OTA, watchdog.
-
-- [ ] `src/master/web_server.cpp/h` — ESPAsyncWebServer
-- [ ] API REST : `/api/data`, `/api/config`, `/api/status`
-- [ ] WebSocket temps reel
-- [ ] Pages HTML/CSS/JS dans `data-master/` (LittleFS)
 - [ ] OTA WiFi (ArduinoOTA ou AsyncElegantOTA)
 - [ ] Watchdog ESP32
-- [ ] Recovery I2C
+- [ ] Tests terrain : portee BLE entre ruches, duty cycle LoRa
+- [ ] Calibration des cellules de charge 200 kg sur les vrais pesons
+- [ ] Validation payload cote serveur (decodeur Go + Grafana)
+- [ ] Integration BEEP (a evaluer — voir `docs/ANALYSE_BEEP.md`)
 
-### Validation
+## Portabilite du code ATSAMD (migration terminee)
 
-- [ ] Interface web accessible depuis smartphone
-- [ ] OTA fonctionne
-- [ ] Watchdog redemarre en cas de blocage
+| Categorie | % | Statut |
+|-----------|---|--------|
+| Reutilisable tel quel | ~40% | Porte dans src/common/ |
+| Adaptable | ~30% | Adapte et integre |
+| A reecrire | ~30% | Reecrit (LoRa, Power, ISR) |
 
-## Ordre de developpement
-
-Le module LoRa SPI n'est pas encore recu. Ordre optimise :
-
-```
-IMMEDIAT (materiel disponible)          QUAND MODULE LORA RECU
-------------------------------          ----------------------
-Phase 0 : Setup + portage              Phase 3 : LoRaWAN
-Phase 1 : Capteurs + OLED              Phase 4 : Web + robustesse
-Phase 2 : BLE Master/Slaves
-```
-
-## Portabilite du code ATSAMD
-
-| Categorie | % | Fichiers |
-|-----------|---|----------|
-| Reutilisable tel quel | ~40% | struct.h, Convert.cpp, Saisies_NB.cpp, Menus.cpp, 24C32.cpp, DS3231.cpp |
-| Adaptable | ~30% | define.h, var.h, Mesures.cpp, Handle.cpp, MenusFonc.cpp, OLED.cpp, KEYPAD.cpp |
-| A reecrire | ~30% | RN2483A.cpp, Power.cpp, ISR.cpp |
+Les 26 fichiers ATSAMD originaux ont ete supprimes le 02/03/2026
+apres verification que tout le code utile etait porte.
 
 ## Documentation associee
 
 | Fichier | Description |
 |---------|-------------|
 | `CLAUDE.md` | Contexte projet pour Claude Code |
-| `docs/plan/IMPACT_MIGRATION_ESP32.md` | Analyse d'impact + 29 decisions |
+| `docs/plan/IMPACT_MIGRATION_ESP32.md` | Analyse d'impact + decisions |
 | `docs/20260220_memo_ruches_connectees_ESP.md` | Memo technique ESP32 (Philippe) |
 | `docs/ANALYSE_BEEP.md` | Etude plateforme BEEP |
-| `docs/plan/ANALYSE_REPO.md` | Audit code ATSAMD |
+| `docs/plan/ANALYSE_REPO.md` | Audit code ATSAMD (historique) |
