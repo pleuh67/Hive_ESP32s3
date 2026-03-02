@@ -1,6 +1,5 @@
-// main.cpp — Master ESP32-S3 Phase 2
-// Cycle : init -> lecture capteurs -> BLE collecte slaves -> OLED -> deep sleep
-// Phase 3 : envoi payload LoRaWAN
+// main.cpp — Master ESP32-S3 Phase 3
+// Cycle : init -> capteurs -> BLE slaves -> payload LoRaWAN -> OLED -> deep sleep
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -16,6 +15,7 @@
 #include "sensor_manager.h"
 #include "menus_master.h"
 #include "ble_master.h"
+#include "lora_manager.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
@@ -84,6 +84,10 @@ void setup()
   // 10. Affichage initial
   showSensorsOnOLED();
   sensorsPrintAll();
+
+  // 11. LoRaWAN : init module SX1262 (SPI + radio)
+  // La session est restauree depuis NVM au premier cycle payload
+  loraInit();
 
   LOG_INFO("Setup termine");
 }
@@ -217,26 +221,23 @@ static void showSensorsOnOLED(void)
 // ---------------------------------------------------------------------------
 // @brief Cycle de mesure complet declenche par l'alarme payload RTC
 //
-// Phase 2 :
+// Phase 3 :
 //   1. Lecture capteurs master (BME280, BH1750, INA219, HX711, VBat)
 //   2. Collecte BLE : scan + connexion slaves + lecture poids/VBat/timestamp
-//   3. Affichage OLED + Serial
-// Phase 3 : + construction payload V2 (24 octets) + envoi LoRaWAN
+//   3. Join LoRaWAN (ou restauration session NVM) si pas encore joint
+//   4. Construction payload V2 (24 octets) + envoi LoRaWAN
+//   5. Affichage OLED + Serial
 // ---------------------------------------------------------------------------
 static void handleWakeupPayload(void)
 {
   LOG_INFO("=== Cycle payload ===");
 
-  // Mesures master
+  // 1. Mesures master
   sensorsReadAll();
   hx711GetWeightGrams();
 
-  // Collecte BLE slaves (bloquant : scan 10 s + connexions)
+  // 2. Collecte BLE slaves (bloquant : scan 10 s + connexions)
   bleMasterCollect(slaveReadings, NUM_SLAVES);
-
-  // Affichage resultats
-  showSensorsOnOLED();
-  sensorsPrintAll();
 
   for (uint8_t i = 0; i < NUM_SLAVES; i++)
   {
@@ -255,5 +256,25 @@ static void handleWakeupPayload(void)
     }
   }
 
-  // TODO Phase 3 : construire payload V2 (24 octets) et envoyer via LoRaWAN
+  // 3. Join LoRaWAN si pas encore joint (NVM ou OTAA frais)
+  if (!loraIsJoined())
+  {
+    loraJoin();
+  }
+
+  // 4. Envoi payload V2 (24 octets)
+  if (loraIsJoined())
+  {
+    loraSendPayload(&HiveSensor_Data, slaveReadings, NUM_SLAVES);
+  }
+
+  // 5. Affichage OLED + Serial
+  showSensorsOnOLED();
+  sensorsPrintAll();
+
+  // Ligne 7 de l'OLED : statut LoRa
+  char loraStatus[22];
+  loraGetStatus(loraStatus, sizeof(loraStatus));
+  displayText(0, 7, loraStatus);
+  displayFlush();
 }

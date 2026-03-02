@@ -19,12 +19,14 @@
 #include "common/keypad.h"
 #include "common/power_manager.h"
 #include "sensor_manager.h"
+#include "lora_manager.h"
 #include "types.h"
 #include "config.h"
 
 // ===== VARIABLES EXTERNES =====
 extern ConfigGenerale_t  config;
 extern HiveSensor_Data_t HiveSensor_Data;
+extern SlaveReading_t    slaveReadings[];   // Rempli par bleMasterCollect()
 
 // ===========================================================================
 // LISTES DE DONNEES
@@ -176,13 +178,29 @@ static void m02_0E_InfosLoRa(void)
 
 static void m02_5F_JoinLoRa(void)
 {
-  OLEDDisplayMessageL8("Join: Phase 3", false, false);
+  OLEDDisplayMessageL8("Join LoRa...", false, false);
+  bool ok = loraJoin();
+  char buf[22];
+  loraGetStatus(buf, sizeof(buf));
+  OLEDDisplayMessageL8(buf, false, false);
+  (void)ok;
   backMenu();
 }
 
 static void m02_6F_SendPayload(void)
 {
-  OLEDDisplayMessageL8("Send: Phase 3", false, false);
+  if (!loraIsJoined())
+  {
+    OLEDDisplayMessageL8("Non joint !", false, false);
+    backMenu();
+    return;
+  }
+  OLEDDisplayMessageL8("Envoi payload...", false, false);
+  bool ok = loraSendPayload(&HiveSensor_Data, slaveReadings, NUM_SLAVES);
+  char buf[22];
+  loraGetStatus(buf, sizeof(buf));
+  OLEDDisplayMessageL8(buf, false, false);
+  (void)ok;
   backMenu();
 }
 
