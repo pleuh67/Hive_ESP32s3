@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ruches Connectees</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:sans-serif;background:#f0f0f0;color:#333}
+header{background:#e8a000;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px}
+header h1{font-size:1.1em;font-weight:700}
+#bar{padding:6px 14px;background:#fff8e7;font-size:.82em;color:#666;border-bottom:1px solid #e0c060;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+#bar button{background:#e8a000;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.85em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;padding:12px}
+.card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.12);overflow:hidden}
+.card-head{background:#e8a000;color:#fff;padding:6px 10px;font-size:.88em;font-weight:700}
+.card-head.slave{background:#5b9bd5}
+.card-head.absent{background:#aaa}
+.card-body{padding:8px 10px}
+.row{display:flex;justify-content:space-between;padding:3px 0;font-size:.88em;border-bottom:1px solid #f0f0f0}
+.row:last-child{border-bottom:none}
+.lbl{color:#888}
+.val{font-weight:600}
+.absent-msg{padding:10px;color:#aaa;font-style:italic;font-size:.88em}
+footer{text-align:center;padding:6px;font-size:.78em;color:#aaa}
+.ok{color:#2a9d2a}.err{color:#c0392b}
+</style>
+</head>
+<body>
+<header>
+  <span style="font-size:1.4em">&#x1F41D;</span>
+  <h1>Ruches Connectees ESP32-S3</h1>
+</header>
+
+<div id="bar">
+  <span id="lora-status">LoRa : --</span>
+  <span>
+    <button onclick="refresh()">Actualiser</button>
+    <span id="cd" style="margin-left:6px;color:#aaa"></span>
+  </span>
+</div>
+
+<div class="grid" id="cards">
+  <div class="card"><div class="card-head">Chargement...</div></div>
+</div>
+
+<footer id="footer">--</footer>
+
+<script>
+var REFRESH_SEC = 30;
+var cd = REFRESH_SEC;
+var timer;
+
+function fmt(v, dec, unit) {
+  return parseFloat(v).toFixed(dec) + ' ' + unit;
+}
+
+function row(lbl, val) {
+  return '<div class="row"><span class="lbl">' + lbl + '</span><span class="val">' + val + '</span></div>';
+}
+
+function renderMaster(m) {
+  return '<div class="card">'
+    + '<div class="card-head">Master</div>'
+    + '<div class="card-body">'
+    + row('Temperature', fmt(m.temp, 1, '°C'))
+    + row('Humidite', fmt(m.hum, 0, '%'))
+    + row('Pression', fmt(m.pres, 0, 'hPa'))
+    + row('Luminosite', fmt(m.lux, 0, 'lux'))
+    + row('Poids', fmt(m.weight_g / 1000.0, 3, 'kg'))
+    + row('VBat', fmt(m.vbat, 2, 'V'))
+    + row('VSol', fmt(m.vsol, 2, 'V'))
+    + row('ISol', fmt(m.isol, 0, 'mA'))
+    + '</div></div>';
+}
+
+function renderSlave(s, idx) {
+  if (!s.valid) {
+    return '<div class="card">'
+      + '<div class="card-head absent">Slave ' + (idx + 1) + '</div>'
+      + '<div class="card-body"><div class="absent-msg">Non recu / absent</div></div>'
+      + '</div>';
+  }
+  var ts = new Date(s.ts * 1000);
+  var tsStr = ts.toLocaleTimeString('fr-FR');
+  return '<div class="card">'
+    + '<div class="card-head slave">Slave ' + (idx + 1) + '</div>'
+    + '<div class="card-body">'
+    + row('Poids', fmt(s.weight_g / 1000.0, 3, 'kg'))
+    + row('VBat', fmt(s.vbat, 2, 'V'))
+    + row('Mesure a', tsStr)
+    + '</div></div>';
+}
+
+function render(d) {
+  var html = renderMaster(d.master);
+  for (var i = 0; i < d.slaves.length; i++) {
+    html += renderSlave(d.slaves[i], i);
+  }
+  document.getElementById('cards').innerHTML = html;
+  var loraEl = document.getElementById('lora-status');
+  loraEl.innerHTML = 'LoRa : <span class="' + (d.lora_ok ? 'ok' : 'err') + '">'
+    + d.lora_status + '</span>';
+}
+
+function refresh() {
+  clearInterval(timer);
+  cd = REFRESH_SEC;
+  document.getElementById('cd').textContent = '';
+
+  fetch('/api/data')
+    .then(function(r) { return r.json(); })
+    .then(render)
+    .catch(function(e) {
+      document.getElementById('lora-status').textContent = 'Erreur API : ' + e;
+    });
+
+  fetch('/api/status')
+    .then(function(r) { return r.json(); })
+    .then(function(st) {
+      document.getElementById('footer').textContent =
+        'v' + st.version +
+        ' | IP : ' + st.ip +
+        ' | RSSI : ' + st.rssi + ' dBm' +
+        ' | Boot #' + st.boot +
+        ' | Uptime : ' + Math.floor(st.uptime / 60) + ' min';
+    });
+
+  timer = setInterval(function() {
+    cd--;
+    document.getElementById('cd').textContent = '(' + cd + 's)';
+    if (cd <= 0) refresh();
+  }, 1000);
+}
+
+refresh();
+</script>
+</body>
+</html>

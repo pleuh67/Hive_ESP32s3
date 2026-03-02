@@ -1,5 +1,6 @@
-// main.cpp — Master ESP32-S3 Phase 3
+// main.cpp — Master ESP32-S3 Phase 4
 // Cycle : init -> capteurs -> BLE slaves -> payload LoRaWAN -> OLED -> deep sleep
+// Web server : WiFi STA + ESPAsyncWebServer actif tant que WiFi connecte
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -16,6 +17,7 @@
 #include "menus_master.h"
 #include "ble_master.h"
 #include "lora_manager.h"
+#include "web_server.h"
 
 // ===== VARIABLES GLOBALES =====
 // Partagees avec les modules via extern
@@ -86,8 +88,11 @@ void setup()
   sensorsPrintAll();
 
   // 11. LoRaWAN : init module SX1262 (SPI + radio)
-  // La session est restauree depuis NVM au premier cycle payload
+  // La session est restauree depuis RTC RAM au premier cycle payload
   loraInit();
+
+  // 12. WiFi + serveur web (optionnel : continue si WiFi absent)
+  webServerInit();
 
   LOG_INFO("Setup termine");
 }
@@ -167,8 +172,14 @@ void loop()
     }
   }
 
-  // --- Deep sleep si inactif depuis DISPLAY_TIMEOUT_MS ---
-  if (!interactiveMode && (millis() - lastActivityMs >= DISPLAY_TIMEOUT_MS))
+  // --- Actions differees (join LoRa via API web) ---
+  webServerProcess();
+
+  // --- Deep sleep si inactif ET WiFi non connecte ---
+  // Si WiFi connecte : rester eveille pour garder le serveur web accessible
+  if (!interactiveMode
+      && !webServerIsConnected()
+      && (millis() - lastActivityMs >= DISPLAY_TIMEOUT_MS))
   {
     DS3231setRTCAlarm2(); // Reconfigurer l'alarme pour le prochain cycle
     powerDeepSleep();
