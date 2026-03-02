@@ -1,5 +1,5 @@
 // lora_manager.h — Couche LoRaWAN master ESP32-S3
-// Phase 3 : SX1262 E22-868M22S + RadioLib 7.x, OTAA, EU868
+// Phase 3 : SX1262 E22-900M22S + RadioLib 7.x, OTAA, EU868
 //
 // Payload V2 (24 octets) — voir CLAUDE.md pour la specification complete
 // Session LoRaWAN persistee en NVM (EEPROM ESP32) — survive au deep sleep

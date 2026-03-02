@@ -1,9 +1,9 @@
 // lora_manager.cpp — Couche LoRaWAN master ESP32-S3
-// Phase 3 : RadioLib 7.x, SX1262 E22-868M22S, OTAA, EU868
+// Phase 3 : RadioLib 7.x, SX1262 E22-900M22S, OTAA, EU868
 //
 // Architecture :
 //   - Module SX1262 sur SPI avec pins dedies (config.h)
-//   - E22-868M22S : DIO2 pilote le commutateur antenne RF (setDio2AsRfSwitch)
+//   - E22-900M22S : DIO2 pilote le commutateur antenne RF (setDio2AsRfSwitch)
 //   - Session OTAA stockee en RTC RAM — survive au deep sleep ESP32
 //   - Restauration : setBufferSession() + isActivated()
 //   - Nouveau join : clearSession() implicite dans beginOTAA()
@@ -185,7 +185,7 @@ bool loraInit(void)
     return false;
   }
 
-  // E22-868M22S : DIO2 pilote l'antenne RF switch TX/RX
+  // E22-900M22S : DIO2 pilote l'antenne RF switch TX/RX
   s_radio.setDio2AsRfSwitch(true);
 
   s_initOK = true;

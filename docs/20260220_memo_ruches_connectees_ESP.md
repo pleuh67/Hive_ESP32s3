@@ -7,7 +7,7 @@ pour Ruches Apicoles --- Mémo Technique Préliminaire
 > **ERRATA (01/03/2026)** :
 > - Backend = **Orange Live Objects** (pas TTN comme mentionné plus bas)
 > - Cellules de charge = **200 kg partout** (pas 50 kg pour les slaves)
-> - Module LoRa = **E22-868M22S (SPI)** requis — le E22-900T30D (UART) est incompatible RadioLib
+> - Module LoRa = **E22-900M22S (SPI)** requis — le E22-900T30D (UART) est incompatible RadioLib
 > - OLED + clavier analogique sur **tous les noeuds** (debug/maintenance)
 > - Librairie BLE = **NimBLE-Arduino** (pas la lib BLE native ESP32)
 
@@ -96,7 +96,7 @@ IDE : Arduino IDE 2.x ou PlatformIO. Board package : esp32 ≥ 3.0.0 (Espressif)
 
   Ebyte E22-868T22S (⭐ RECOMMANDÉ)   SPI + UART, IPEX U.FL      22 dBm, 5 km    8--12 €    🔗 [[AliExpress E22-900T22S]{.underline}](https://www.aliexpress.com/i/4000548865041.html)
 
-  Ebyte E22-868M22S                   SPI, SMD sans connecteur   22 dBm, 5 km    7--10 €    🔗 [[Ebyte Official Store]{.underline}](https://ebyteiot.com/collections/lora-module/sx1262)
+  Ebyte E22-900M22S                   SPI, SMD sans connecteur   22 dBm, 5 km    7--10 €    🔗 [[Ebyte Official Store]{.underline}](https://ebyteiot.com/collections/lora-module/sx1262)
 
   Waveshare SX1262 HAT                SPI, bien documenté        22 dBm          10--15 €   🔗 [[Recherche AliExpress]{.underline}](https://www.aliexpress.com/w/wholesale-Waveshare-SX1262-LoRa.html)
   ----------------------------------- -------------------------- --------------- ---------- ------------------------------------------------------------------------------------------------------------

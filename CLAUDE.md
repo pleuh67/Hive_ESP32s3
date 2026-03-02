@@ -41,7 +41,7 @@ ESP32-S3 Master
 |   +-- BH1750 (0x23) — luminosite en lux
 |   +-- INA219 (0x40) — courant/tension solaire
 +-- SPI bus
-|   +-- SX1262 E22-868M22S (LoRaWAN) — RadioLib
+|   +-- SX1262 E22-900M22S (LoRaWAN) — RadioLib
 +-- GPIO
 |   +-- HX711 x1 (cellule 200 kg)
 |   +-- Alarme RTC (interrupt FALLING)
@@ -222,7 +222,7 @@ Slave absent : poids = 0x7FFF, VBat = 0xFF
 |----------|-------|
 | Nombre de slaves | 3 |
 | Backend LoRaWAN | Orange Live Objects (pas TTN) |
-| Module LoRa | E22-868M22S (SPI) — le E22-900T30D (UART) est incompatible |
+| Module LoRa | E22-900M22S (SPI) — le E22-900T30D (UART) est incompatible |
 | BLE | NimBLE avec pairing passkey statique |
 | ADR LoRaWAN | Active, option forcer SF via menu |
 | Cellules de charge | 200 kg partout |

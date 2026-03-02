@@ -13,7 +13,7 @@ OLED + clavier + menus               Poids + VBat + timestamp
            |                                |
            +------- BLE GATT (15 m) --------+
            |
-     LoRaWAN SX1262 (E22-868M22S)
+     LoRaWAN SX1262 (E22-900M22S)
            |
    Orange Live Objects
            |
@@ -46,7 +46,7 @@ pio device monitor -b 115200   # Moniteur serie
 | BH1750 | I2C | 0x23 |
 | INA219 | I2C | 0x40 |
 | HX711 | GPIO | SCK=4, DOUT=5 |
-| SX1262 E22-868M22S | SPI | SCK=12, MISO=13, MOSI=11, NSS=10 |
+| SX1262 E22-900M22S | SPI | SCK=12, MISO=13, MOSI=11, NSS=10 |
 | Clavier analogique 5 touches | ADC | GPIO1 |
 | VBat | ADC | GPIO2 |
 | VSol | ADC | GPIO3 |

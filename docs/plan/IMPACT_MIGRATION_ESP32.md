@@ -16,7 +16,7 @@ Référence : `docs/20260220_memo_ruches_connectees_ESP.md` (mémo technique Phi
 | Interfaces utilisateur | **OLED + clavier + Web** (les deux conservées) |
 | Organisation repo | **Un seul repo**, deux env PlatformIO `[env:master]` / `[env:slave]` |
 | Cartes SODAQ | **Retirées** |
-| Module LoRa | **E22-868M22S (SPI)** à commander — le E22-900T30D (UART) est incompatible RadioLib |
+| Module LoRa | **E22-900M22S (SPI)** à commander — le E22-900T30D (UART) est incompatible RadioLib |
 | BLE sécurité | **Pairing avec passkey statique** |
 | ADR LoRaWAN | **Activé**, option forcer SF7/9/12 via menu |
 | Cellules de charge | **200 kg partout** (erreur mémo pour 50 kg slaves) |
@@ -281,6 +281,6 @@ Toutes les questions ont été tranchées avec Philippe. Voir le tableau de déc
 
 ### Points d'attention découverts pendant l'analyse
 
-- **Module LoRa E22-900T30D (UART) commandé par erreur** — incompatible RadioLib (qui nécessite SPI). Commander un **E22-868M22S** (SPI, EU868). Le E22-900T30D a aussi un problème de puissance (30 dBm > limite EU868 de 14 dBm).
+- **Module LoRa E22-900T30D (UART) commandé par erreur** — incompatible RadioLib (qui nécessite SPI). Commander un **E22-900M22S** (SPI, EU868). Le E22-900T30D a aussi un problème de puissance (30 dBm > limite EU868 de 14 dBm).
 - **Erreur mémo : cellules 50 kg slaves** — c'est 200 kg partout.
 - **OLED + clavier sur tous les noeuds** (pas prévu dans le mémo original qui disait "slaves ultra-low-power BLE seulement") — pour debug/maintenance, débranchable en prod.

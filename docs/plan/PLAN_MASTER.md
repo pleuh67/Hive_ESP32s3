@@ -93,7 +93,7 @@ LORAWAN               WEB + SERVEUR
 - [x] Construction payload V2 (24 octets)
 - [x] Persistance session LoRaWAN en RTC RAM (getBufferSession/setBufferSession)
 - [x] ADR active, option forcer SF via menu
-- [x] `radio.setDio2AsRfSwitch(true)` pour E22-868M22S
+- [x] `radio.setDio2AsRfSwitch(true)` pour E22-900M22S
 
 ## Phase 4 — Serveur web [DONE]
 
