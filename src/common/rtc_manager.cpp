@@ -96,7 +96,7 @@ void initRTC(void)
     if (!rtc.begin())
     {
       LOG_ERROR("Erreur: RESET RTC pas OK => FIN");
-      while (1)
+      while (0)
       {
         delay(1000);  // TODO: remplacer par blink LED
       }
