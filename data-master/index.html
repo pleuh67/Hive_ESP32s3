@@ -9,14 +9,19 @@
 body{font-family:sans-serif;background:#f0f0f0;color:#333}
 header{background:#e8a000;color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px}
 header h1{font-size:1.1em;font-weight:700}
+nav{background:#fff;border-bottom:2px solid #e8a000;display:flex;gap:0}
+nav button{background:none;border:none;border-bottom:3px solid transparent;padding:10px 18px;font-size:.9em;cursor:pointer;color:#666;font-weight:600;margin-bottom:-2px}
+nav button.active{color:#e8a000;border-bottom-color:#e8a000}
+nav button:hover:not(.active){background:#faf0e0;color:#e8a000}
+#notif{display:none;padding:8px 14px;color:#fff;font-size:.88em;font-weight:600}
 #bar{padding:6px 14px;background:#fff8e7;font-size:.82em;color:#666;border-bottom:1px solid #e0c060;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
 #bar button{background:#e8a000;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.85em}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;padding:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;padding:12px}
 .card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.12);overflow:hidden}
 .card-head{background:#e8a000;color:#fff;padding:6px 10px;font-size:.88em;font-weight:700}
 .card-head.slave{background:#5b9bd5}
 .card-head.absent{background:#aaa}
-.card-body{padding:8px 10px}
+.card-body{padding:10px}
 .row{display:flex;justify-content:space-between;padding:3px 0;font-size:.88em;border-bottom:1px solid #f0f0f0}
 .row:last-child{border-bottom:none}
 .lbl{color:#888}
@@ -24,6 +29,19 @@ header h1{font-size:1.1em;font-weight:700}
 .absent-msg{padding:10px;color:#aaa;font-style:italic;font-size:.88em}
 footer{text-align:center;padding:6px;font-size:.78em;color:#aaa}
 .ok{color:#2a9d2a}.err{color:#c0392b}
+.form-row{display:flex;align-items:center;gap:6px;padding:5px 0;flex-wrap:wrap}
+.form-row label{color:#888;font-size:.85em;min-width:70px;flex-shrink:0}
+input[type=text],input[type=password],input[type=number],select{border:1px solid #ccc;border-radius:4px;padding:4px 7px;font-size:.88em;font-family:monospace;flex:1;min-width:80px;background:#fafafa}
+input:focus,select:focus{outline:none;border-color:#e8a000;background:#fff}
+.btn{background:#e8a000;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.85em;white-space:nowrap;flex-shrink:0}
+.btn:hover{background:#d09000}
+.btn-blue{background:#5b9bd5}.btn-blue:hover{background:#4a8ac4}
+.btn-green{background:#2a9d2a}.btn-green:hover{background:#228022}
+.sep{border:none;border-top:1px solid #f0f0f0;margin:6px 0}
+.live-val{font-size:1.8em;font-weight:700;text-align:center;padding:8px 0;color:#333}
+.info-row{display:flex;justify-content:space-between;padding:3px 0;font-size:.85em}
+.info-row .lbl{color:#888}
+.info-row .val{font-weight:600;font-family:monospace}
 </style>
 </head>
 <body>
@@ -32,21 +50,203 @@ footer{text-align:center;padding:6px;font-size:.78em;color:#aaa}
   <h1>Ruches Connectees ESP32-S3</h1>
 </header>
 
-<div id="bar">
-  <span id="lora-status">LoRa : --</span>
-  <span>
-    <button onclick="refresh()">Actualiser</button>
-    <span id="cd" style="margin-left:6px;color:#aaa"></span>
-  </span>
+<nav>
+  <button id="tab-data" class="active" onclick="showTab('data')">Donnees</button>
+  <button id="tab-lora" onclick="showTab('lora')">LoRa</button>
+  <button id="tab-cal"  onclick="showTab('cal')">Calibration</button>
+</nav>
+
+<div id="notif"></div>
+
+<!-- ===== ONGLET DONNEES ===== -->
+<div id="pane-data">
+  <div id="bar">
+    <span id="lora-bar">LoRa : --</span>
+    <span>
+      <button onclick="refresh()">Actualiser</button>
+      <span id="cd" style="margin-left:6px;color:#aaa"></span>
+    </span>
+  </div>
+  <div class="grid" id="cards">
+    <div class="card"><div class="card-head">Chargement...</div></div>
+  </div>
 </div>
 
-<div class="grid" id="cards">
-  <div class="card"><div class="card-head">Chargement...</div></div>
+<!-- ===== ONGLET LORA ===== -->
+<div id="pane-lora" style="display:none">
+  <div class="grid">
+
+    <div class="card">
+      <div class="card-head">Connexion LoRa</div>
+      <div class="card-body">
+        <div class="form-row">
+          <label>DevEUI</label>
+          <input type="text" id="lora-deveui" maxlength="16" placeholder="lecture seule" readonly style="color:#888">
+        </div>
+        <div class="form-row">
+          <label>AppEUI</label>
+          <input type="text" id="lora-appeui" maxlength="16" placeholder="AABBCCDDEEFF0011">
+        </div>
+        <div class="form-row">
+          <label>AppKey</label>
+          <input type="password" id="lora-appkey" maxlength="32" placeholder="32 car. hex (laisser vide = inchange)">
+        </div>
+        <div class="form-row" style="justify-content:flex-end;margin-top:4px">
+          <button class="btn" onclick="saveLoraKeys()">Sauvegarder cles</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">Parametres LoRa</div>
+      <div class="card-body">
+        <div class="form-row">
+          <label>Statut</label>
+          <span id="lora-joined-status" class="val err">--</span>
+          &nbsp;
+          <span id="lora-msg" style="font-size:.82em;color:#888"></span>
+        </div>
+        <hr class="sep">
+        <div class="form-row">
+          <label>SF</label>
+          <select id="lora-sf">
+            <option value="7">SF7</option>
+            <option value="8">SF8</option>
+            <option value="9" selected>SF9</option>
+            <option value="10">SF10</option>
+            <option value="11">SF11</option>
+            <option value="12">SF12</option>
+          </select>
+          <button class="btn" onclick="saveLoraSf()">Sauvegarder SF</button>
+        </div>
+        <hr class="sep">
+        <div class="form-row" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-blue" onclick="doLoraJoin()">Rejoindre</button>
+          <button class="btn btn-green" onclick="doLoraSend()">Envoyer payload</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== ONGLET CALIBRATION ===== -->
+<div id="pane-cal" style="display:none">
+  <div class="grid">
+
+    <div class="card">
+      <div class="card-head">Balance HX711</div>
+      <div class="card-body">
+        <div class="live-val" id="cal-live">-- kg</div>
+        <div class="form-row" style="justify-content:center;margin-bottom:6px">
+          <button class="btn btn-blue" onclick="doTare()">Tare a vide</button>
+        </div>
+        <hr class="sep">
+        <div class="form-row">
+          <label>Poids ref</label>
+          <input type="number" id="cal-refkg" min="0.001" step="0.001" placeholder="ex: 10.500">
+          <span style="font-size:.85em;color:#888;flex-shrink:0">kg</span>
+          <button class="btn" onclick="doCalScale()">Calibrer</button>
+        </div>
+        <hr class="sep">
+        <div class="info-row">
+          <span class="lbl">Noload (tare brute)</span>
+          <span class="val" id="cal-noload">--</span>
+        </div>
+        <div class="info-row">
+          <span class="lbl">Facteur echelle</span>
+          <span class="val" id="cal-scaling">--</span>
+        </div>
+        <div class="info-row">
+          <span class="lbl">Poids calcule</span>
+          <span class="val" id="cal-weight">--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">Tensions ADC</div>
+      <div class="card-body">
+        <div class="info-row" style="margin-bottom:4px">
+          <span class="lbl">VBat mesure</span>
+          <span class="val" id="cal-vbat">-- V</span>
+        </div>
+        <div class="form-row">
+          <label>VBat reel</label>
+          <input type="number" id="cal-vbat-ref" min="0.1" step="0.01" placeholder="ex: 3.85">
+          <span style="font-size:.85em;color:#888;flex-shrink:0">V</span>
+          <button class="btn" onclick="doCalVbat()">Ajuster</button>
+        </div>
+        <div class="info-row" style="font-size:.78em;color:#aaa;margin-bottom:8px">
+          <span>Scale: <span id="cal-vbat-scale">--</span></span>
+        </div>
+        <hr class="sep">
+        <div class="info-row" style="margin-bottom:4px">
+          <span class="lbl">VSol mesure</span>
+          <span class="val" id="cal-vsol">-- V</span>
+        </div>
+        <div class="form-row">
+          <label>VSol reel</label>
+          <input type="number" id="cal-vsol-ref" min="0.1" step="0.01" placeholder="ex: 5.20">
+          <span style="font-size:.85em;color:#888;flex-shrink:0">V</span>
+          <button class="btn" onclick="doCalVsol()">Ajuster</button>
+        </div>
+        <div class="info-row" style="font-size:.78em;color:#aaa">
+          <span>Scale: <span id="cal-vsol-scale">--</span></span>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <footer id="footer">--</footer>
 
 <script>
+// ---------------------------------------------------------------------------
+// Navigation onglets
+// ---------------------------------------------------------------------------
+var activeTab = 'data';
+var calLiveTimer = null;
+
+function showTab(name) {
+  var tabs = ['data', 'lora', 'cal'];
+  for (var i = 0; i < tabs.length; i++) {
+    document.getElementById('pane-' + tabs[i]).style.display = 'none';
+    document.getElementById('tab-' + tabs[i]).classList.remove('active');
+  }
+  document.getElementById('pane-' + name).style.display = '';
+  document.getElementById('tab-' + name).classList.add('active');
+  if (activeTab === 'cal' && name !== 'cal') stopCalLive();
+  activeTab = name;
+  if (name === 'lora') loadLoraConfig();
+  if (name === 'cal') { loadCalConfig(); startCalLive(); }
+}
+
+// ---------------------------------------------------------------------------
+// Notification
+// ---------------------------------------------------------------------------
+function notify(msg, isErr) {
+  var n = document.getElementById('notif');
+  n.textContent = msg;
+  n.style.background = isErr ? '#c0392b' : '#2a9d2a';
+  n.style.display = 'block';
+  setTimeout(function() { n.style.display = 'none'; }, 4000);
+}
+
+function apiPost(url, cb) {
+  fetch(url, {method:'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      notify(d.message || (d.ok ? 'OK' : 'Erreur'), !d.ok);
+      if (cb) cb(d);
+    })
+    .catch(function(e) { notify('Erreur reseau: ' + e, true); });
+}
+
+// ---------------------------------------------------------------------------
+// Onglet Donnees (existant)
+// ---------------------------------------------------------------------------
 var REFRESH_SEC = 30;
 var cd = REFRESH_SEC;
 var timer;
@@ -54,16 +254,14 @@ var timer;
 function fmt(v, dec, unit) {
   return parseFloat(v).toFixed(dec) + ' ' + unit;
 }
-
 function row(lbl, val) {
   return '<div class="row"><span class="lbl">' + lbl + '</span><span class="val">' + val + '</span></div>';
 }
-
 function renderMaster(m) {
   return '<div class="card">'
     + '<div class="card-head">Master</div>'
     + '<div class="card-body">'
-    + row('Temperature', fmt(m.temp, 1, '°C'))
+    + row('Temperature', fmt(m.temp, 1, '&deg;C'))
     + row('Humidite', fmt(m.hum, 0, '%'))
     + row('Pression', fmt(m.pres, 0, 'hPa'))
     + row('Luminosite', fmt(m.lux, 0, 'lux'))
@@ -73,7 +271,6 @@ function renderMaster(m) {
     + row('ISol', fmt(m.isol, 0, 'mA'))
     + '</div></div>';
 }
-
 function renderSlave(s, idx) {
   if (!s.valid) {
     return '<div class="card">'
@@ -82,50 +279,41 @@ function renderSlave(s, idx) {
       + '</div>';
   }
   var ts = new Date(s.ts * 1000);
-  var tsStr = ts.toLocaleTimeString('fr-FR');
   return '<div class="card">'
     + '<div class="card-head slave">Slave ' + (idx + 1) + '</div>'
     + '<div class="card-body">'
     + row('Poids', fmt(s.weight_g / 1000.0, 3, 'kg'))
     + row('VBat', fmt(s.vbat, 2, 'V'))
-    + row('Mesure a', tsStr)
+    + row('Mesure a', ts.toLocaleTimeString('fr-FR'))
     + '</div></div>';
 }
-
 function render(d) {
   var html = renderMaster(d.master);
-  for (var i = 0; i < d.slaves.length; i++) {
-    html += renderSlave(d.slaves[i], i);
-  }
+  for (var i = 0; i < d.slaves.length; i++) html += renderSlave(d.slaves[i], i);
   document.getElementById('cards').innerHTML = html;
-  var loraEl = document.getElementById('lora-status');
-  loraEl.innerHTML = 'LoRa : <span class="' + (d.lora_ok ? 'ok' : 'err') + '">'
+  var el = document.getElementById('lora-bar');
+  el.innerHTML = 'LoRa : <span class="' + (d.lora_ok ? 'ok' : 'err') + '">'
     + d.lora_status + '</span>';
 }
-
 function refresh() {
   clearInterval(timer);
   cd = REFRESH_SEC;
   document.getElementById('cd').textContent = '';
-
   fetch('/api/data')
     .then(function(r) { return r.json(); })
     .then(render)
     .catch(function(e) {
-      document.getElementById('lora-status').textContent = 'Erreur API : ' + e;
+      document.getElementById('lora-bar').textContent = 'Erreur API : ' + e;
     });
-
   fetch('/api/status')
     .then(function(r) { return r.json(); })
     .then(function(st) {
       document.getElementById('footer').textContent =
-        'v' + st.version +
-        ' | IP : ' + st.ip +
+        'v' + st.version + ' | IP : ' + st.ip +
         ' | RSSI : ' + st.rssi + ' dBm' +
         ' | Boot #' + st.boot +
         ' | Uptime : ' + Math.floor(st.uptime / 60) + ' min';
     });
-
   timer = setInterval(function() {
     cd--;
     document.getElementById('cd').textContent = '(' + cd + 's)';
@@ -133,6 +321,108 @@ function refresh() {
   }, 1000);
 }
 
+// ---------------------------------------------------------------------------
+// Onglet LoRa
+// ---------------------------------------------------------------------------
+function loadLoraConfig() {
+  fetch('/api/config/lora')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('lora-deveui').value = d.deveui_hex;
+      document.getElementById('lora-appeui').value = d.appeui_hex;
+      document.getElementById('lora-sf').value = String(d.sf);
+      var el = document.getElementById('lora-joined-status');
+      el.textContent = d.joined ? 'Joint' : 'Non joint';
+      el.className = 'val ' + (d.joined ? 'ok' : 'err');
+      document.getElementById('lora-msg').textContent = d.lora_status;
+    })
+    .catch(function(e) { notify('Erreur chargement LoRa: ' + e, true); });
+}
+function saveLoraSf() {
+  var sf = document.getElementById('lora-sf').value;
+  apiPost('/api/config/lora/sf?sf=' + sf, null);
+}
+function saveLoraKeys() {
+  var appeui = document.getElementById('lora-appeui').value.trim();
+  var appkey = document.getElementById('lora-appkey').value.trim();
+  if (!appeui && !appkey) { notify('Aucune cle a sauvegarder', true); return; }
+  var url = '/api/config/lora/keys';
+  var sep = '?';
+  if (appeui) { url += sep + 'appeui=' + appeui; sep = '&'; }
+  if (appkey) { url += sep + 'appkey=' + appkey; }
+  apiPost(url, null);
+}
+function doLoraJoin() {
+  apiPost('/api/lora/join', function(d) {
+    if (d.ok) setTimeout(loadLoraConfig, 3000);
+  });
+}
+function doLoraSend() {
+  apiPost('/api/lora/send', null);
+}
+
+// ---------------------------------------------------------------------------
+// Onglet Calibration
+// ---------------------------------------------------------------------------
+function loadCalConfig() {
+  fetch('/api/config/cal')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('cal-noload').textContent = d.noload.toFixed(0);
+      document.getElementById('cal-scaling').textContent = d.scaling.toFixed(4);
+      document.getElementById('cal-weight').textContent = (d.weight_g / 1000).toFixed(3) + ' kg';
+      document.getElementById('cal-vbat').textContent = d.vbat.toFixed(3) + ' V';
+      document.getElementById('cal-vsol').textContent = d.vsol.toFixed(3) + ' V';
+      document.getElementById('cal-vbat-scale').textContent = d.vbat_scale.toFixed(8);
+      document.getElementById('cal-vsol-scale').textContent = d.vsol_scale.toFixed(8);
+    })
+    .catch(function(e) { notify('Erreur chargement Cal: ' + e, true); });
+}
+function startCalLive() {
+  updateCalLive();
+  calLiveTimer = setInterval(updateCalLive, 2000);
+}
+function stopCalLive() {
+  if (calLiveTimer) { clearInterval(calLiveTimer); calLiveTimer = null; }
+}
+function updateCalLive() {
+  fetch('/api/hx711/raw')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('cal-live').textContent =
+        (d.weight_g / 1000).toFixed(3) + ' kg';
+    })
+    .catch(function() {});
+}
+function doTare() {
+  apiPost('/api/cal/tare', function(d) {
+    if (d.ok) setTimeout(function() { updateCalLive(); loadCalConfig(); }, 1200);
+  });
+}
+function doCalScale() {
+  var ref = parseFloat(document.getElementById('cal-refkg').value);
+  if (isNaN(ref) || ref <= 0) { notify('Entrer un poids de reference valide (kg)', true); return; }
+  var ref_g = Math.round(ref * 1000);
+  apiPost('/api/cal/scale?ref_g=' + ref_g, function(d) {
+    if (d.ok) setTimeout(function() { updateCalLive(); loadCalConfig(); }, 1200);
+  });
+}
+function doCalVbat() {
+  var ref = parseFloat(document.getElementById('cal-vbat-ref').value);
+  if (isNaN(ref) || ref <= 0) { notify('Entrer la tension VBat reelle (V)', true); return; }
+  apiPost('/api/cal/vbat?ref_v=' + ref.toFixed(3), function(d) {
+    if (d.ok) setTimeout(loadCalConfig, 500);
+  });
+}
+function doCalVsol() {
+  var ref = parseFloat(document.getElementById('cal-vsol-ref').value);
+  if (isNaN(ref) || ref <= 0) { notify('Entrer la tension VSol reelle (V)', true); return; }
+  apiPost('/api/cal/vsol?ref_v=' + ref.toFixed(3), function(d) {
+    if (d.ok) setTimeout(loadCalConfig, 500);
+  });
+}
+
+// ---------------------------------------------------------------------------
 refresh();
 </script>
 </body>

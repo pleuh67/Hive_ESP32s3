@@ -1,12 +1,13 @@
 // web_server.cpp — Serveur web master ESP32-S3
 // Phase 4 : WiFi STA + ESPAsyncWebServer + LittleFS
+// Phase 5 : Multi-ecrans (Donnees / LoRa / Calibration)
 //
 // Architecture :
 //   - WiFi STA, connexion au setup (timeout 10 s)
 //   - ESPAsyncWebServer sur port 80 (async, non bloquant)
 //   - LittleFS pour servir index.html
 //   - JSON construit manuellement avec snprintf (pas d'ArduinoJson)
-//   - Actions bloquantes (loraJoin) differees via flag -> traitees dans loop()
+//   - Actions bloquantes differees via flags -> traitees dans loop()
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -17,6 +18,9 @@
 #include "config.h"
 #include "credentials.h"
 #include "types.h"
+#include "common/hx711_manager.h"
+#include "common/eeprom_manager.h"
+#include "common/convert.h"
 
 // ---------------------------------------------------------------------------
 // Acces aux donnees globales (definies dans main.cpp)
@@ -34,7 +38,11 @@ extern uint32_t bootCount;
 // ---------------------------------------------------------------------------
 
 static AsyncWebServer s_server(80);
-static bool           s_joinRequested = false; // flag pour action differee
+static bool  s_joinRequested  = false; // flag : loraJoin() en attente
+static bool  s_sendRequested  = false; // flag : loraSendPayload() en attente
+static bool  s_tareRequested  = false; // flag : hx711Tare() en attente
+static bool  s_calibRequested = false; // flag : hx711CalcScale() en attente
+static float s_calibRefGrams  = 0.0f; // poids reference pour calibration
 
 // ---------------------------------------------------------------------------
 // Construction JSON (snprintf dans buffer statique)
@@ -42,7 +50,7 @@ static bool           s_joinRequested = false; // flag pour action differee
 // ---------------------------------------------------------------------------
 
 // Serialize les donnees capteurs master + slaves en JSON
-// buf : destination (600 octets recommandes)
+// buf : destination (640 octets recommandes)
 static void buildJsonData(char* buf, size_t bufLen)
 {
   // Poids master en grammes (HX711Weight est en grammes)
@@ -137,6 +145,52 @@ static void buildJsonStatus(char* buf, size_t bufLen)
   );
 }
 
+// Serialize la configuration LoRa en JSON (AppKey non retourne)
+static void buildJsonConfigLora(char* buf, size_t bufLen)
+{
+  char deveui_hex[17] = "????????????????";
+  char appeui_hex[17] = "????????????????";
+  char loraStatus[32];
+  loraGetStatus(loraStatus, sizeof(loraStatus));
+
+  byteArrayToHexString(config.materiel.DevEUI,   8, deveui_hex, sizeof(deveui_hex));
+  byteArrayToHexString(config.applicatif.AppEUI,  8, appeui_hex, sizeof(appeui_hex));
+
+  snprintf(buf, bufLen,
+    "{\"sf\":%u,"
+    "\"deveui_hex\":\"%s\","
+    "\"appeui_hex\":\"%s\","
+    "\"joined\":%s,"
+    "\"lora_status\":\"%s\"}",
+    (unsigned)config.applicatif.SpreadingFactor,
+    deveui_hex,
+    appeui_hex,
+    loraIsJoined() ? "true" : "false",
+    loraStatus
+  );
+}
+
+// Serialize les donnees de calibration en JSON
+static void buildJsonConfigCal(char* buf, size_t bufLen)
+{
+  snprintf(buf, bufLen,
+    "{\"noload\":%.0f,"
+    "\"scaling\":%.4f,"
+    "\"vbat_scale\":%.8f,"
+    "\"vsol_scale\":%.8f,"
+    "\"weight_g\":%.3f,"
+    "\"vbat\":%.3f,"
+    "\"vsol\":%.3f}",
+    config.materiel.HX711NoloadValue_0,
+    config.materiel.HX711Scaling_0,
+    config.materiel.VBatScale,
+    config.materiel.VSolScale,
+    HiveSensor_Data.HX711Weight[0],
+    HiveSensor_Data.Bat_Voltage,
+    HiveSensor_Data.Solar_Voltage
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Handlers de routes
 // ---------------------------------------------------------------------------
@@ -155,12 +209,239 @@ static void handleApiStatus(AsyncWebServerRequest* request)
   request->send(200, "application/json", buf);
 }
 
+// GET /api/config/lora — configuration LoRa (AppKey non retourne)
+static void handleApiConfigLora(AsyncWebServerRequest* request)
+{
+  static char buf[256];
+  buildJsonConfigLora(buf, sizeof(buf));
+  request->send(200, "application/json", buf);
+}
+
+// POST /api/config/lora/sf?sf=9 — met a jour le Spreading Factor
+static void handleApiConfigLoraSf(AsyncWebServerRequest* request)
+{
+  if (!request->hasParam("sf"))
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Param sf manquant\"}");
+    return;
+  }
+
+  uint8_t sf = (uint8_t)atoi(request->getParam("sf")->value().c_str());
+  if (sf < 7 || sf > 12)
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"SF invalide (7-12)\"}");
+    return;
+  }
+
+  config.applicatif.SpreadingFactor = sf;
+  E24C32saveConfig();
+
+  static char buf[64];
+  snprintf(buf, sizeof(buf),
+    "{\"ok\":true,\"message\":\"SF=%u sauvegarde\"}", (unsigned)sf);
+  request->send(200, "application/json", buf);
+}
+
+// POST /api/config/lora/keys?appeui=XX&appkey=XX — met a jour AppEUI + AppKey
+static void handleApiConfigLoraKeys(AsyncWebServerRequest* request)
+{
+  bool changed = false;
+
+  if (request->hasParam("appeui"))
+  {
+    const char* s = request->getParam("appeui")->value().c_str();
+    if (strlen(s) != 16)
+    {
+      request->send(400, "application/json",
+        "{\"ok\":false,\"message\":\"AppEUI : 16 caracteres hex attendus\"}");
+      return;
+    }
+    if (!hexStringToByteArray(s, config.applicatif.AppEUI, 8))
+    {
+      request->send(400, "application/json",
+        "{\"ok\":false,\"message\":\"AppEUI : caracteres hex invalides\"}");
+      return;
+    }
+    changed = true;
+  }
+
+  if (request->hasParam("appkey"))
+  {
+    const char* s = request->getParam("appkey")->value().c_str();
+    if (strlen(s) != 32)
+    {
+      request->send(400, "application/json",
+        "{\"ok\":false,\"message\":\"AppKey : 32 caracteres hex attendus\"}");
+      return;
+    }
+    if (!hexStringToByteArray(s, config.applicatif.AppKey, 16))
+    {
+      request->send(400, "application/json",
+        "{\"ok\":false,\"message\":\"AppKey : caracteres hex invalides\"}");
+      return;
+    }
+    changed = true;
+  }
+
+  if (!changed)
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Aucun parametre fourni\"}");
+    return;
+  }
+
+  E24C32saveConfig();
+  request->send(200, "application/json",
+    "{\"ok\":true,\"message\":\"Cles LoRa sauvegardees\"}");
+}
+
 // POST /api/lora/join — loraJoin() est bloquant, on utilise un flag
 static void handleLoraJoin(AsyncWebServerRequest* request)
 {
   s_joinRequested = true;
   request->send(202, "application/json",
-                "{\"status\":\"join_requested\"}");
+    "{\"ok\":true,\"message\":\"Join LoRa demande\"}");
+}
+
+// POST /api/lora/send — loraSendPayload() est bloquant, on utilise un flag
+static void handleLoraSend(AsyncWebServerRequest* request)
+{
+  if (!loraIsJoined())
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"LoRa non joint — faire Join d abord\"}");
+    return;
+  }
+  s_sendRequested = true;
+  request->send(202, "application/json",
+    "{\"ok\":true,\"message\":\"Envoi payload demande\"}");
+}
+
+// GET /api/config/cal — valeurs calibration courantes
+static void handleApiConfigCal(AsyncWebServerRequest* request)
+{
+  static char buf[300];
+  buildJsonConfigCal(buf, sizeof(buf));
+  request->send(200, "application/json", buf);
+}
+
+// GET /api/hx711/raw — lecture brute en direct (pour calibration live)
+// Lit 1 echantillon si HX711 pret (non bloquant si pas pret)
+static void handleApiHx711Raw(AsyncWebServerRequest* request)
+{
+  static char buf[80];
+  float raw_val  = 0.0f;
+  float weight_g = HiveSensor_Data.HX711Weight[0]; // valeur precompilee
+
+  if (scale.is_ready())
+  {
+    raw_val = (float)scale.read();
+    float tare    = config.materiel.HX711NoloadValue_0;
+    float echelle = config.materiel.HX711Scaling_0;
+    if (echelle != 0.0f)
+    {
+      weight_g = (raw_val - tare) / echelle;
+    }
+  }
+
+  snprintf(buf, sizeof(buf),
+    "{\"raw\":%.0f,\"weight_g\":%.3f}",
+    raw_val, weight_g);
+  request->send(200, "application/json", buf);
+}
+
+// POST /api/cal/tare — pose la tare a vide (deferred : bloquant ~250 ms)
+static void handleCalTare(AsyncWebServerRequest* request)
+{
+  s_tareRequested = true;
+  request->send(202, "application/json",
+    "{\"ok\":true,\"message\":\"Tare demandee\"}");
+}
+
+// POST /api/cal/scale?ref_g=10500 — calibre l'echelle (deferred)
+static void handleCalScale(AsyncWebServerRequest* request)
+{
+  if (!request->hasParam("ref_g"))
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Param ref_g manquant\"}");
+    return;
+  }
+
+  float ref_g = atof(request->getParam("ref_g")->value().c_str());
+  if (ref_g <= 0.0f)
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"ref_g doit etre > 0\"}");
+    return;
+  }
+
+  s_calibRefGrams  = ref_g;
+  s_calibRequested = true;
+  request->send(202, "application/json",
+    "{\"ok\":true,\"message\":\"Calibration demandee\"}");
+}
+
+// POST /api/cal/vbat?ref_v=3.85 — ajuste VBatScale par valeur multimetre
+static void handleCalVbat(AsyncWebServerRequest* request)
+{
+  if (!request->hasParam("ref_v"))
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Param ref_v manquant\"}");
+    return;
+  }
+
+  float ref_v    = atof(request->getParam("ref_v")->value().c_str());
+  float measured = HiveSensor_Data.Bat_Voltage;
+
+  if (ref_v <= 0.0f || measured <= 0.1f)
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Valeurs invalides (ref>0, mesure>0.1V)\"}");
+    return;
+  }
+
+  config.materiel.VBatScale = config.materiel.VBatScale * ref_v / measured;
+  E24C32saveConfig();
+
+  static char buf[96];
+  snprintf(buf, sizeof(buf),
+    "{\"ok\":true,\"message\":\"VBatScale=%.8f\"}",
+    config.materiel.VBatScale);
+  request->send(200, "application/json", buf);
+}
+
+// POST /api/cal/vsol?ref_v=5.20 — ajuste VSolScale par valeur multimetre
+static void handleCalVsol(AsyncWebServerRequest* request)
+{
+  if (!request->hasParam("ref_v"))
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Param ref_v manquant\"}");
+    return;
+  }
+
+  float ref_v    = atof(request->getParam("ref_v")->value().c_str());
+  float measured = HiveSensor_Data.Solar_Voltage;
+
+  if (ref_v <= 0.0f || measured <= 0.1f)
+  {
+    request->send(400, "application/json",
+      "{\"ok\":false,\"message\":\"Valeurs invalides (ref>0, mesure>0.1V)\"}");
+    return;
+  }
+
+  config.materiel.VSolScale = config.materiel.VSolScale * ref_v / measured;
+  E24C32saveConfig();
+
+  static char buf[96];
+  snprintf(buf, sizeof(buf),
+    "{\"ok\":true,\"message\":\"VSolScale=%.8f\"}",
+    config.materiel.VSolScale);
+  request->send(200, "application/json", buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,28 +473,42 @@ bool webServerInit(void)
     Serial.println("[FS] LittleFS echec — reformatage...");
     if (!LittleFS.begin(true))
     {
-      Serial.println("[FS] LittleFS irrécuperable");
+      Serial.println("[FS] LittleFS irrecuperable");
       return false;
     }
   }
   Serial.printf("[FS] LittleFS OK — libre: %lu Ko\n",
                 (unsigned long)LittleFS.totalBytes() / 1024UL);
 
-  // 3. Routes API
+  // 3. Routes API — Donnees
   s_server.on("/api/data",   HTTP_GET,  handleApiData);
   s_server.on("/api/status", HTTP_GET,  handleApiStatus);
-  s_server.on("/api/lora/join", HTTP_POST, handleLoraJoin);
 
-  // 4. Fichiers statiques depuis LittleFS (index.html par defaut)
+  // 4. Routes API — LoRa
+  s_server.on("/api/config/lora",      HTTP_GET,  handleApiConfigLora);
+  s_server.on("/api/config/lora/sf",   HTTP_POST, handleApiConfigLoraSf);
+  s_server.on("/api/config/lora/keys", HTTP_POST, handleApiConfigLoraKeys);
+  s_server.on("/api/lora/join",        HTTP_POST, handleLoraJoin);
+  s_server.on("/api/lora/send",        HTTP_POST, handleLoraSend);
+
+  // 5. Routes API — Calibration
+  s_server.on("/api/config/cal", HTTP_GET,  handleApiConfigCal);
+  s_server.on("/api/hx711/raw",  HTTP_GET,  handleApiHx711Raw);
+  s_server.on("/api/cal/tare",   HTTP_POST, handleCalTare);
+  s_server.on("/api/cal/scale",  HTTP_POST, handleCalScale);
+  s_server.on("/api/cal/vbat",   HTTP_POST, handleCalVbat);
+  s_server.on("/api/cal/vsol",   HTTP_POST, handleCalVsol);
+
+  // 6. Fichiers statiques depuis LittleFS (index.html par defaut)
   s_server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
-  // 5. 404
+  // 7. 404
   s_server.onNotFound([](AsyncWebServerRequest* req)
   {
     req->send(404, "text/plain", "Non trouve");
   });
 
-  // 6. En-tetes CORS pour l'API (acces depuis navigateur local)
+  // 8. En-tetes CORS pour l'API (acces depuis navigateur local)
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
 
   s_server.begin();
@@ -239,5 +534,29 @@ void webServerProcess(void)
     s_joinRequested = false;
     Serial.println("[Web] Join LoRa demande via API...");
     loraJoin();
+  }
+
+  if (s_sendRequested)
+  {
+    s_sendRequested = false;
+    Serial.println("[Web] Envoi payload demande via API...");
+    loraSendPayload(&HiveSensor_Data, slaveReadings, NUM_SLAVES);
+  }
+
+  if (s_tareRequested)
+  {
+    s_tareRequested = false;
+    Serial.println("[Web] Tare demandee via API...");
+    hx711Tare();
+    E24C32saveConfig();
+  }
+
+  if (s_calibRequested)
+  {
+    s_calibRequested = false;
+    Serial.printf("[Web] Calibration demandee via API (ref=%.1f g)...\n",
+                  s_calibRefGrams);
+    hx711CalcScale(s_calibRefGrams);
+    E24C32saveConfig();
   }
 }
